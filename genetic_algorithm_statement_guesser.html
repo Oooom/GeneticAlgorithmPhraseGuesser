@@ -1,0 +1,237 @@
+<html>
+
+<head>
+    <title>Genetic Algorithm Statement Guesser</title>
+    <style>
+        * {
+            font-family: monospace;
+        }
+
+        b {
+            font-size: 2em;
+        }
+    </style>
+</head>
+
+<body>
+    <h1 id="phrase"></h1>
+    <div>
+        Best: <b id="best_phrase"></b>, <b id="best_fitness"></b>
+        <br>
+        Average: <b id="avg"></b>
+        <br>
+        Total Generations: <b id="gen_no"></b>
+    </div>
+</body>
+
+<script>    
+    //maps the 1st parameter which has a value between 2nd and 3rd parameter to 4th and 5th parameter bounds
+    function mapRange(value, a, b, c, d) {
+        value = (value - a) / (b - a);
+        return c + value * (d - c);
+    }
+
+    //support functions
+    function getRandomChar() {
+        var r = mapRange(Math.random(), 0, 1, 32, 126)
+
+        if (r > 125) {  //since Math.random() will never return 1, so assuming any value which is greater than the last possible value to be 126
+            r = 126
+        }
+
+        return String.fromCharCode(parseInt(r))
+    }
+
+</script>
+<script>
+    var phrase_div = document.getElementById("phrase")
+    var best_phrase_div = document.getElementById("best_phrase")
+    var best_fitness_div = document.getElementById("best_fitness")
+    var avg_div = document.getElementById("avg")
+    var gen_no_div = document.getElementById("gen_no")
+
+
+    var phrase = "Max Payne: The way I see it there's two types of people, those who spend their lives trying to build a future and those who spend their lives trying to rebuild the past."
+    phrase_div.innerText = phrase
+
+    var mutationRate = 0.01
+    var people_in_a_generation = 200
+    var top_n_best = 25
+
+    var pop = new Population(phrase, people_in_a_generation, mutationRate, top_n_best)
+    var pool //stores the top_n_best Entities. Mating happens among these only
+    var gen_no = 0
+
+    findOptimal()
+
+    function findOptimal() {
+        setInterval(fun, 16)
+
+        function fun() {
+            if (pool) {
+                if (pool[0].fitness < 1) { //when fitness reaches 1, it means the phrase is replicated
+                    nextGeneration()
+                } else {
+                    removeInterval(fun)
+                }
+            } else {
+                nextGeneration()
+            }
+        }
+    }
+
+    function nextGeneration() {
+        gen_no++
+        pop.generate(pool)
+
+        var meta = pop.calculateFitness()
+        if (meta.mating_pool.length > 0) pool = meta.mating_pool
+
+        avg_div.innerText = meta.average
+        best_fitness_div.innerText = meta.mating_pool[0].fitness
+        best_phrase_div.innerText = meta.mating_pool[0].entity.contents
+        gen_no_div.innerText = gen_no
+    }
+
+    function Entity(content) {
+        this.contents = (content) ? content : ""    //silly check whether content is empty, I always pass it with some string, in short this check was not needed
+
+        //if called, mutate is to be called only once right after the creation of the Entity
+        this.mutate = function (mutationRate) { // it alters a character in the contents "mutationRate"% of time
+            var ray = [] //used an array and then joining it later, could have used a simple string also I know
+
+            for (var i = 0; i < this.contents.length; i++) {
+                if (Math.random() < mutationRate) {
+                    ray.push(getRandomChar())
+                } else {
+                    ray.push(this.contents.charAt(i))
+                }
+            }
+
+            this.contents = ray.join("")
+        }
+    }
+
+    function Population(target_phrase, max_pop, mutation_rate, select_top_n) {
+        this.target = target_phrase
+        this.top_n = select_top_n
+        this.max_pop = max_pop
+        this.mutationRate = mutation_rate
+
+        this.population = []
+
+        this.generate = function (mating_pool) {
+            this.population = []
+
+            if (mating_pool) { //mating_pool ie top_n_best Entities are there, so making the entire generation by crossing over Entities from the pool only
+                for (var i = 0; i < this.max_pop; i++) {
+                    //taking randome parents from the mating pool
+                    var parentA = mating_pool[parseInt(mapRange(Math.random(), 0, 1, 0, mating_pool.length - 1))].entity
+                    var parentB = mating_pool[parseInt(mapRange(Math.random(), 0, 1, 0, mating_pool.length - 1))].entity
+
+                    var child = this.crossover(parentA, parentB)
+
+                    child.mutate(this.mutationRate)
+
+                    this.population.push(child)
+                }
+            } else {
+                for (var i = 0; i < this.max_pop; i++) {
+                    this.population.push(new Entity(this.getRandomPhrase()))
+                }
+            }
+        }
+
+        this.crossover = function (entityA, entityB) { //arbitrary crossover routine, here, I have chosen a random pivot, the left of the pivot will have A's contents and right of the pivot will have B's contents.
+            var child = ""
+
+            //crossover function 1
+            var pivot = mapRange(Math.random(), 0, 1, 1, this.target.length - 1)
+
+            var index = 0
+
+            for (; index < pivot; index++) {
+                child += entityA.contents.charAt(index)
+            }
+
+            for (; index < this.target.length; index++) {
+                child += entityB.contents.charAt(index)
+            }
+
+            //crossover function 2
+            // for(var i = 0; i < this.target.length; i++){
+            //     if(i%2){
+            //         child += entityA.contents.charAt(i)
+            //     }else{
+            //         child += entityB.contents.charAt(i)
+            //     }
+            // }
+
+
+            return new Entity(child)
+        }
+
+        this.getRandomPhrase = function () {
+            var phrase = ""
+
+            for (var i = 0; i < this.target.length; i++) {
+                phrase += getRandomChar()
+            }
+
+            return phrase
+        }
+
+
+        this.calculateFitness = function () {
+            var best = []   //this will become the next generations mating pool
+            var sum = 0
+
+            for (var i = 0; i < this.population.length; i++) {//for each entity in the population
+                var total_correct = 0
+
+                for (var j = 0; j < this.population[i].contents.length; j++) {
+                    if (this.population[i].contents.charAt(j) == this.target.charAt(j)) {
+                        total_correct++
+                    }
+                }
+
+                var fitness = total_correct / this.target.length
+                fitness = fitness * fitness
+
+                if (fitness > 0) {
+                    best.push({
+                        fitness: fitness,
+                        entity: this.population[i]
+                    })
+                }
+                sortAndPrune(best, this.top_n)
+
+                sum += fitness
+            }
+
+            var average = sum / this.population.length
+
+            return {
+                average: average,
+                mating_pool: best
+            }
+        }
+
+        //ordering as per the fitness value, and splicing at the end to restrict the ray to the top_n_best value
+        function sortAndPrune(ray, n) {
+            for (var i = ray.length - 1; i > 0; i--) {
+                if (ray[i].fitness > ray[i - 1].fitness) {
+                    var temp = ray[i]
+                    ray[i] = ray[i - 1]
+                    ray[i - 1] = temp
+                } else {
+                    break
+                }
+            }
+
+            ray.splice(n - 1, 1)
+        }
+    }
+</script>
+
+</html>
